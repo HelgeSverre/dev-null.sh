@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Enums\PollDuration;
+use App\Models\Commit;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -38,8 +41,6 @@ final class StressSeeder extends Seeder
     private const int REPLIES = 400_000;
 
     private const int QUOTES = 30_000;
-
-    private const int SERIES = 2_000;
 
     private const int STARS = 6_000_000;
 
@@ -90,7 +91,6 @@ final class StressSeeder extends Seeder
         $this->step('commits', $this->seedCommits(...));
         $this->step('replies', $this->seedReplies(...));
         $this->step('quotes', $this->seedQuotes(...));
-        $this->step('series', $this->seedSeries(...));
         $this->step('stars', $this->seedStars(...));
         $this->step('link previews and images', $this->seedAttachments(...));
         $this->step('polls', $this->seedPolls(...));
@@ -159,7 +159,7 @@ final class StressSeeder extends Seeder
             $$
             SQL);
 
-        DB::statement('create unlogged table stress_bodies (n int primary key, body varchar(280) not null)');
+        DB::statement('create unlogged table stress_bodies (n int primary key, body text not null)');
 
         foreach (array_chunk($this->bodies(), 500) as $chunk) {
             DB::table('stress_bodies')->insert($chunk);
@@ -167,7 +167,8 @@ final class StressSeeder extends Seeder
     }
 
     /**
-     * Commit bodies in the shapes people post: short status lines, longer thoughts, mentions, links, and code blocks.
+     * Commit bodies in the shapes people post: short status lines, longer thoughts, long-form posts that collapse to a
+     * preview, mentions, links, and code blocks.
      *
      * @return list<array{n: int, body: string}>
      */
@@ -190,11 +191,12 @@ final class StressSeeder extends Seeder
                 $n % 10 === 0 => "Shipped it:\n```".$languages[$n % count($languages)]."\n".$snippets[$n % count($snippets)]."\n```",
                 $n % 7 === 0 => fake()->sentence().' @dev_'.fake()->numberBetween(1, 500),
                 $n % 11 === 0 => fake()->sentence().' https://example.com/'.fake()->slug(3),
+                $n % 13 === 0 => fake()->realTextBetween(Commit::PREVIEW_LENGTH + 100, Commit::MAX_BODY_LENGTH - 100),
                 $n % 3 === 0 => fake()->realTextBetween(120, 270),
                 default => fake()->realTextBetween(20, 110),
             };
 
-            $bodies[] = ['n' => $n, 'body' => Str::limit($body, 277, '...')];
+            $bodies[] = ['n' => $n, 'body' => Str::limit($body, Commit::MAX_BODY_LENGTH - 3, '...')];
         }
 
         return $bodies;
@@ -415,43 +417,6 @@ final class StressSeeder extends Seeder
             join stress_users as author on author.n = picks.author_n
             join stress_bodies as bodies on bodies.n = picks.body_n
             cross join lateral (select least(localtimestamp, quoted.created_at + picks.delay * interval '2 days') as quoted_at) as timing
-            SQL);
-    }
-
-    /**
-     * Series of three parts: the first is top-level, and each later part replies to the one before it.
-     */
-    private function seedSeries(): void
-    {
-        $series = $this->count(self::SERIES);
-        $developers = $this->count(self::DEVELOPERS);
-
-        DB::statement(<<<SQL
-            create temporary table stress_series as
-            select gen_random_uuid() as series_id, author.id as user_id, started_at,
-                pg_temp.uuid7(started_at) as first_id,
-                pg_temp.uuid7(started_at + interval '1 second') as second_id,
-                pg_temp.uuid7(started_at + interval '2 seconds') as third_id
-            from (
-                select 1 + floor({$developers} * power(random(), 2))::int as author_n,
-                    localtimestamp - random() * interval '365 days' as started_at
-                from generate_series(1, {$series})
-            ) as picks
-            join stress_users as author on author.n = picks.author_n
-            SQL);
-
-        DB::statement(<<<'SQL'
-            insert into commits (id, user_id, body, status, parent_id, root_id, series_id, series_position, series_size, created_at, updated_at)
-            select first_id, user_id, 'A thread on how we cut our build in half (1/3)', 'approved', null, null, series_id, 1, 3, started_at, started_at
-            from stress_series
-            union all
-            select second_id, user_id, 'First, we cached the dependencies between runs (2/3)', 'approved', first_id, first_id, series_id, 2, 3,
-                started_at + interval '1 second', started_at + interval '1 second'
-            from stress_series
-            union all
-            select third_id, user_id, 'Then we split the slowest suite across four workers (3/3)', 'approved', second_id, first_id, series_id, 3, 3,
-                started_at + interval '2 seconds', started_at + interval '2 seconds'
-            from stress_series
             SQL);
     }
 
@@ -689,34 +654,44 @@ final class StressSeeder extends Seeder
     }
 
     /**
-     * The same score UpdateCommitHotScores gives, for every top-level commit at once: the stars on the commit plus
-     * three for each other developer replying in its thread or quoting any of its commits.
+     * The same score UpdateCommitHotScores gives, for every top-level commit at once. Each other developer counts once,
+     * for the most they did: three for replying anywhere in the thread or quoting any of its commits, and one for only
+     * starring the commit or one of its replies.
      */
     private function seedHotScores(): void
     {
         DB::statement(<<<'SQL'
-            update commits set hot_score = round((log(2, (1 + coalesce(starred.stars, 0) + 3 * coalesce(engaged.repliers, 0))::numeric)
-                + extract(epoch from commits.created_at)::numeric / 43200), 6)
+            with engagements as (
+                select root_id as thread_id, user_id, true as replied from commits
+                where root_id is not null and status = 'approved' and deleted_at is null
+                union all
+                select quoted_commit_id, user_id, true from commits
+                where quoted_commit_id is not null and status = 'approved' and deleted_at is null
+                union all
+                select quoted.root_id, engagements.user_id, true from commits as engagements
+                join commits as quoted on quoted.id = engagements.quoted_commit_id
+                where quoted.root_id is not null and engagements.status = 'approved' and engagements.deleted_at is null and quoted.status = 'approved'
+                union all
+                select commit_id, user_id, false from stars
+                union all
+                select starred.root_id, stars.user_id, false from stars
+                join commits as starred on starred.id = stars.commit_id
+                where starred.root_id is not null and starred.status = 'approved' and starred.deleted_at is null
+            ),
+            people as (
+                select thread_id, user_id, bool_or(replied) as replied from engagements group by thread_id, user_id
+            ),
+            engaged as (
+                select roots.id, count(*) filter (where people.replied) as repliers, count(*) filter (where not people.replied) as stargazers
+                from commits as roots join people on people.thread_id = roots.id
+                where roots.parent_id is null and people.user_id is distinct from roots.user_id
+                group by roots.id
+            )
+            update commits set hot_score = round((log(2, (1 + coalesce(engaged.stargazers, 0) + 3 * coalesce(engaged.repliers, 0))::numeric)
+                + extract(epoch from commits.created_at)::numeric / 21600), 6)
             from commits as roots
-            left join (select commit_id, count(*) as stars from stars group by commit_id) as starred on starred.commit_id = roots.id
-            left join (
-                select threads.thread_id, count(distinct threads.user_id) as repliers
-                from (
-                    select root_id as thread_id, user_id from commits
-                    where root_id is not null and status = 'approved' and deleted_at is null
-                    union
-                    select quoted_commit_id, user_id from commits
-                    where quoted_commit_id is not null and status = 'approved' and deleted_at is null
-                    union
-                    select quoted.root_id, engagements.user_id from commits as engagements
-                    join commits as quoted on quoted.id = engagements.quoted_commit_id
-                    where quoted.root_id is not null and engagements.status = 'approved' and engagements.deleted_at is null and quoted.status = 'approved'
-                ) as threads
-                join commits as root on root.id = threads.thread_id
-                where threads.user_id is distinct from root.user_id
-                group by threads.thread_id
-            ) as engaged on engaged.thread_id = roots.id
-            where commits.id = roots.id and roots.parent_id is null
+            left join engaged on engaged.id = roots.id
+            where commits.id = roots.id and roots.parent_id is null and roots.deleted_at is null
             SQL);
     }
 
@@ -731,12 +706,20 @@ final class StressSeeder extends Seeder
             return;
         }
 
+        // Writing each vector through the HNSW index took over twenty minutes for 100k commits. Building the index once
+        // they are all written takes under a minute...
+        Schema::table('commits', fn (Blueprint $table) => $table->dropVectorIndex('commits_embedding_index'));
+
         DB::statement(<<<SQL
             update commits set embedding = (
                 select array_agg(random() - 0.5)::vector from generate_series(1, 1536) where commits.id is not null
             )
             where id in (select id from commits where parent_id is null order by created_at desc limit {$embeddings})
             SQL);
+
+        DB::statement("set maintenance_work_mem = '1GB'");
+        Schema::table('commits', fn (Blueprint $table) => $table->vectorIndex('embedding', 'commits_embedding_index'));
+        DB::statement('reset maintenance_work_mem');
     }
 
     private function dropLookupTables(): void
