@@ -41,9 +41,19 @@ final readonly class NotificationGroupsQuery
         return $groups;
     }
 
+    /**
+     * Whether two unread notifications share a group only depends on what happened between them, so grouping from the
+     * oldest unread one onward counts the same groups as grouping the whole history, which every page would pay for.
+     */
     public function unreadCount(User $user): int
     {
-        return $this->events($user)->where('group_rank', 1)->where('unread_count', '>', 0)->count();
+        $oldestUnread = Notification::query()->where('recipient_id', $user->id)->unread()->relevant()->min('created_at');
+
+        if (! is_string($oldestUnread)) {
+            return 0;
+        }
+
+        return $this->events($user, since: $oldestUnread)->where('group_rank', 1)->where('unread_count', '>', 0)->count();
     }
 
     public function members(User $user, Notification $notification, string $type = 'all'): NotificationBuilder
@@ -55,9 +65,10 @@ final readonly class NotificationGroupsQuery
                 ->withExists(['followers as is_followed' => fn (Builder $query): Builder => $query->whereKey($user->id)])]);
     }
 
-    public function events(User $user, string $type = 'all'): NotificationBuilder
+    public function events(User $user, string $type = 'all', ?string $since = null): NotificationBuilder
     {
-        $visible = Notification::query()->where('recipient_id', $user->id)->relevant()->select('notifications.*');
+        $visible = Notification::query()->where('recipient_id', $user->id)->relevant()->select('notifications.*')
+            ->when($since !== null, fn (NotificationBuilder $query): NotificationBuilder => $query->where('created_at', '>=', $since));
         $filtered = Notification::query()->from('visible')->select('visible.*', 'identified.group_id')
             ->join('identified', 'identified.id', '=', 'visible.id')
             ->when($type !== 'all', fn (NotificationBuilder $query): NotificationBuilder => $query->whereIn('type', match ($type) {
@@ -76,24 +87,17 @@ final readonly class NotificationGroupsQuery
             default => 'unixepoch(created_at) - unixepoch(previous_match_at)',
         };
 
-        // Deleted ancestors supply grouping identity only; content comes from relevant notifications.
+        // A reply or mention belongs to its thread, named by the thread's top-level commit, which every reply records
+        // as its root. Deleted threads still supply that identity; content comes from relevant notifications.
         $sql = <<<SQL
-            WITH RECURSIVE visible AS ({$visible->toSql()}),
-            ancestry AS (
-                SELECT visible.id AS notification_id, commits.id, commits.parent_id
-                FROM visible JOIN commits ON commits.id = visible.commit_id
-                WHERE visible.type IN ('replied', 'mentioned')
-                UNION ALL
-                SELECT ancestry.notification_id, parent.id, parent.parent_id
-                FROM ancestry JOIN commits AS parent ON parent.id = ancestry.parent_id
-            ),
+            WITH visible AS ({$visible->toSql()}),
             topics AS (
                 SELECT visible.*,
                     CASE WHEN visible.type = 'starred' THEN 'starred' ELSE 'activity' END AS topic_kind,
                     CASE WHEN visible.type = 'followed' THEN visible.recipient_id
                         WHEN visible.type = 'starred' THEN visible.commit_id
-                        ELSE COALESCE(ancestry.id, visible.id) END AS topic_id
-                FROM visible LEFT JOIN ancestry ON ancestry.notification_id = visible.id AND ancestry.parent_id IS NULL
+                        ELSE COALESCE(threads.root_id, threads.id, visible.id) END AS topic_id
+                FROM visible LEFT JOIN commits AS threads ON threads.id = visible.commit_id AND visible.type IN ('replied', 'mentioned')
             ),
             predecessors AS (
                 SELECT id, topic_kind, topic_id, created_at,
