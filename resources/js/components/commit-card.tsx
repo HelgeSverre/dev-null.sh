@@ -16,11 +16,13 @@ import {
 } from '@/components/commit-thread';
 import { GraphRail, RailAvatar, RailDot } from '@/components/graph-rail';
 import { LinkPreview } from '@/components/link-preview';
+import { Minesweeper } from '@/components/minesweeper';
 import { QuotedCommit } from '@/components/quoted-commit';
 import { Button } from '@/components/ui/button';
 import { UserPreview } from '@/components/user-preview';
 import { useNow } from '@/hooks/use-now';
 import { commitMutationOptions } from '@/lib/commit-mutation-options';
+import { isMinesweeper } from '@/lib/minesweeper';
 import {
     cn,
     formatFullDateTime,
@@ -290,6 +292,9 @@ export function CommitCard({
                                     isFocused ? 'text-[17px]' : 'text-[15px]',
                                 )}
                             />
+                            {isMinesweeper(commit.body) && (
+                                <Minesweeper commit={commit} />
+                            )}
                             {showImages && <CommitImages commit={commit} />}
                             {commit.poll && (
                                 <CommitPoll
