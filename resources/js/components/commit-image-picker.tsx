@@ -2,6 +2,7 @@ import { ImagePlus, X } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { ActionTooltip } from '@/components/action-tooltip';
 import { Button } from '@/components/ui/button';
+import { PickedImageError, readPickedImages } from '@/lib/read-picked-images';
 import { cn } from '@/lib/utils';
 
 export const maxImages = 3;
@@ -90,6 +91,8 @@ export function ImagePickerButton({
     className?: string;
 }) {
     const inputRef = useRef<HTMLInputElement>(null);
+    const [reading, setReading] = useState(false);
+    const [readError, setReadError] = useState<string | null>(null);
 
     return (
         <>
@@ -99,9 +102,33 @@ export function ImagePickerButton({
                 accept={acceptedTypes.join(',')}
                 multiple
                 hidden
-                onChange={(event) => {
-                    onPick(Array.from(event.target.files ?? []));
-                    event.target.value = '';
+                onChange={async (event) => {
+                    const input = event.currentTarget;
+                    const files = Array.from(input.files ?? []);
+                    if (files.length === 0) return;
+
+                    setReading(true);
+                    setReadError(null);
+                    try {
+                        const images = await readPickedImages(
+                            files.slice(0, maxImages - count),
+                        );
+                        onPick(images);
+                        if (files.length > maxImages - count) {
+                            setReadError(
+                                `Up to ${maxImages} images per commit.`,
+                            );
+                        }
+                    } catch (error) {
+                        setReadError(
+                            error instanceof PickedImageError
+                                ? error.message
+                                : 'Could not read this image. Try selecting it again, or choose Browse in the photo picker.',
+                        );
+                    } finally {
+                        input.value = '';
+                        setReading(false);
+                    }
                 }}
                 data-test="commit-image-input"
             />
@@ -110,15 +137,21 @@ export function ImagePickerButton({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    disabled={disabled || count >= maxImages}
+                    disabled={disabled || reading || count >= maxImages}
                     onClick={() => inputRef.current?.click()}
-                    aria-label="Attach images"
+                    aria-label={reading ? 'Reading images' : 'Attach images'}
+                    aria-busy={reading}
                     className={cn('text-muted-foreground', className)}
                     data-test="attach-images-button"
                 >
                     <ImagePlus className="size-5" />
                 </Button>
             </ActionTooltip>
+            {readError && (
+                <p role="alert" className="text-sm text-destructive">
+                    {readError}
+                </p>
+            )}
         </>
     );
 }
