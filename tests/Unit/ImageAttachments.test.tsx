@@ -64,21 +64,22 @@ vi.doMock('react', () => ({
         return activeHarness.state[index];
     },
     useState: (initial: unknown) => {
-        const index = activeHarness.cursor++;
-        if (!(index in activeHarness.state)) {
-            activeHarness.state[index] =
+        const harness = activeHarness;
+        const index = harness.cursor++;
+        if (!(index in harness.state)) {
+            harness.state[index] =
                 typeof initial === 'function'
                     ? (initial as () => unknown)()
                     : initial;
         }
 
         return [
-            activeHarness.state[index],
+            harness.state[index],
             (next: unknown) => {
-                activeHarness.state[index] =
+                harness.state[index] =
                     typeof next === 'function'
                         ? (next as (current: unknown) => unknown)(
-                              activeHarness.state[index],
+                              harness.state[index],
                           )
                         : next;
             },
@@ -315,4 +316,56 @@ test('keeps valid images around an oversized selection and displays the error', 
     assert.deepEqual(draft.descriptions, ['', '']);
     assert.match(attachments.error!, /10 MB/);
     assert.equal(attachments.isReading(), false);
+});
+
+test('rejected files do not consume the last available attachment slot', async () => {
+    const existing = new File(['existing'], 'existing.png', {
+        type: 'image/png',
+    });
+    const draft: Draft = {
+        key: 'stash:race:capacity',
+        images: [existing, existing],
+        descriptions: ['first', 'second'],
+    };
+    const oversized = new File(
+        [new Uint8Array(10 * 1024 * 1024 + 1)],
+        'large.png',
+        {
+            type: 'image/png',
+        },
+    );
+    const valid = new File(['valid'], 'valid.png', { type: 'image/png' });
+
+    await render(draft).pick([oversized, valid]);
+
+    assert.deepEqual(
+        draft.images.map((image) => image.name),
+        ['existing.png', 'existing.png', 'valid.png'],
+    );
+    assert.deepEqual(draft.descriptions, ['first', 'second', '']);
+    assert.match(render(draft).error!, /10 MB/);
+});
+
+test('late read errors belong to the originating hook instance', async () => {
+    const firstHarness = createHarness();
+    const secondHarness = createHarness();
+    const first: Draft = {
+        key: 'stash:race:first-error',
+        images: [],
+        descriptions: [],
+    };
+    const second: Draft = {
+        key: 'stash:race:second-error',
+        images: [],
+        descriptions: [],
+    };
+    const delayed = deferredImage();
+    const pending = render(first, firstHarness).pick([delayed.file]);
+    await delayed.started;
+    render(second, secondHarness);
+    delayed.reject();
+    await pending;
+
+    assert.match(render(first, firstHarness).error!, /Could not read/);
+    assert.equal(render(second, secondHarness).error, null);
 });

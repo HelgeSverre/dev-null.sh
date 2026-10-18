@@ -47,11 +47,19 @@ async function readPickedImage(file: File): Promise<File> {
 
 export async function readPickedImages(
     files: File[],
+    capacity = maxImages,
 ): Promise<{ images: File[]; errors: unknown[] }> {
     const images: File[] = [];
     const errors: unknown[] = [];
 
     for (const file of files) {
+        if (images.length >= capacity) {
+            errors.push(
+                new PickedImageError(`Up to ${maxImages} images per commit.`),
+            );
+            break;
+        }
+
         try {
             images.push(await readPickedImage(file));
         } catch (error) {

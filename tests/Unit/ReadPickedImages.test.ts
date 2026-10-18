@@ -77,3 +77,17 @@ void test('rejects empty and unsupported images', async () => {
     assert.match((errors[0] as Error).message, /empty/);
     assert.match((errors[1] as Error).message, /JPEG/);
 });
+
+void test('stops reading providers once successful copies fill capacity', async () => {
+    const valid = new File(['valid'], 'valid.png', { type: 'image/png' });
+    const skipped = {
+        type: 'image/png',
+        stream() {
+            assert.fail('Files beyond capacity must not be read');
+        },
+    } as unknown as File;
+    const { images, errors } = await readPickedImages([valid, skipped], 1);
+    assert.equal(images.length, 1);
+    assert.equal(await images[0].text(), 'valid');
+    assert.match((errors[0] as Error).message, /Up to 3/);
+});

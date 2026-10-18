@@ -80,12 +80,10 @@ export function useImageAttachments(
         if (files.length === 0 || available === 0) return;
 
         setError(null);
-        await readImagesForDraft(draftKey, files.slice(0, available), {
+        await readImagesForDraft(draftKey, files, {
+            capacity: available,
             onReady: (prepared) => {
                 latestAttach.current(prepared);
-                if (files.length > available) {
-                    setError(`Up to ${maxImages} images per commit.`);
-                }
             },
             onError: (error) => {
                 setError(

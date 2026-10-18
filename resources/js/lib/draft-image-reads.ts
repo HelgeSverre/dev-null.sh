@@ -8,6 +8,7 @@ type ImageRead = {
 };
 
 type ImageReadOptions = {
+    readonly capacity?: number;
     readonly onReady: (files: File[]) => void;
     readonly onError: (error: unknown) => void;
     readonly owner?: symbol;
@@ -56,7 +57,7 @@ export function cancelImageReads(prefix: string): void {
 export async function readImagesForDraft(
     key: string,
     files: File[],
-    { onReady, onError, owner }: ImageReadOptions,
+    { onReady, onError, owner, capacity }: ImageReadOptions,
 ): Promise<void> {
     if (reads.has(key)) return;
 
@@ -65,7 +66,7 @@ export async function readImagesForDraft(
     notifyListeners();
 
     try {
-        const { images, errors } = await readPickedImages(files);
+        const { images, errors } = await readPickedImages(files, capacity);
         if (reads.get(key) !== read) return;
 
         if (images.length > 0) onReady(images);
