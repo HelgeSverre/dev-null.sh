@@ -17,7 +17,11 @@ void test('copies provider bytes without reading unstable metadata', async () =>
         },
         stream: () => source.stream(),
     } as unknown as File;
-    const [image] = await readPickedImages([provider]);
+    const {
+        images: [image],
+        errors,
+    } = await readPickedImages([provider]);
+    assert.deepEqual(errors, []);
     assert.notEqual(image, provider);
     assert.equal(image.name, source.name);
     assert.equal(image.type, source.type);
@@ -39,9 +43,9 @@ void test('rejects an unreadable provider instead of attaching a broken file', a
                 },
             }),
     } as unknown as File;
-    await assert.rejects(readPickedImages([provider]), {
-        name: 'NotReadableError',
-    });
+    const { images, errors } = await readPickedImages([provider]);
+    assert.deepEqual(images, []);
+    assert.equal((errors[0] as Error).name, 'NotReadableError');
 });
 
 void test('bounds oversized reads and cancels the provider stream', async () => {
@@ -58,19 +62,18 @@ void test('bounds oversized reads and cancels the provider stream', async () => 
                 },
             }),
     } as unknown as File;
-    await assert.rejects(readPickedImages([provider]), /10 MB/);
+    const { images, errors } = await readPickedImages([provider]);
+    assert.deepEqual(images, []);
+    assert.match((errors[0] as Error).message, /10 MB/);
     assert.equal(cancelled, true);
 });
 
 void test('rejects empty and unsupported images', async () => {
-    await assert.rejects(
-        readPickedImages([new File([], 'empty.png', { type: 'image/png' })]),
-        /empty/,
-    );
-    await assert.rejects(
-        readPickedImages([
-            new File(['gif'], 'photo.gif', { type: 'image/gif' }),
-        ]),
-        /JPEG/,
-    );
+    const { images, errors } = await readPickedImages([
+        new File([], 'empty.png', { type: 'image/png' }),
+        new File(['gif'], 'photo.gif', { type: 'image/gif' }),
+    ]);
+    assert.deepEqual(images, []);
+    assert.match((errors[0] as Error).message, /empty/);
+    assert.match((errors[1] as Error).message, /JPEG/);
 });

@@ -284,3 +284,35 @@ test('two attachment hooks observe a shared draft read synchronously', async () 
         ['shared.png'],
     );
 });
+
+test('keeps valid images around an oversized selection and displays the error', async () => {
+    const draft: Draft = {
+        key: 'stash:race:mixed',
+        images: [],
+        descriptions: [],
+    };
+    const first = new File(['first'], 'first.png', { type: 'image/png' });
+    const oversized = new File(
+        [new Uint8Array(10 * 1024 * 1024 + 1)],
+        'large.png',
+        {
+            type: 'image/png',
+        },
+    );
+    const last = new File(['last'], 'last.png', { type: 'image/png' });
+
+    await render(draft).pick([first, oversized, last]);
+
+    const attachments = render(draft);
+    assert.deepEqual(
+        draft.images.map((image) => image.name),
+        ['first.png', 'last.png'],
+    );
+    assert.deepEqual(
+        await Promise.all(draft.images.map((image) => image.text())),
+        ['first', 'last'],
+    );
+    assert.deepEqual(draft.descriptions, ['', '']);
+    assert.match(attachments.error!, /10 MB/);
+    assert.equal(attachments.isReading(), false);
+});

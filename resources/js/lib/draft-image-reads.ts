@@ -65,14 +65,11 @@ export async function readImagesForDraft(
     notifyListeners();
 
     try {
-        await readPickedImages(files).then(
-            (images) => {
-                if (reads.get(key) === read) onReady(images);
-            },
-            (error: unknown) => {
-                if (reads.get(key) === read) onError(error);
-            },
-        );
+        const { images, errors } = await readPickedImages(files);
+        if (reads.get(key) !== read) return;
+
+        if (images.length > 0) onReady(images);
+        if (errors.length > 0 && reads.get(key) === read) onError(errors[0]);
     } finally {
         if (reads.get(key) === read) {
             reads.delete(key);
