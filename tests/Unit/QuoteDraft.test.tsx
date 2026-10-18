@@ -10,6 +10,7 @@ const updateImages = vi.fn();
 const drop = vi.fn();
 const user = { id: 'viewer', username: 'viewer' };
 const draft = {
+    key: 'stash:viewer:quote',
     body: 'A restored quote',
     images: [image],
     descriptions: ['A restored screenshot'],
@@ -21,6 +22,7 @@ const draft = {
 
 vi.doMock('react', () => ({
     ...React,
+    useLayoutEffect: (effect: () => void | (() => void)) => effect(),
     useMemo: (factory: () => unknown) => factory(),
     useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) =>
         snapshot(),
@@ -66,7 +68,7 @@ function elements(node: ReactNode): ReactElement<Record<string, unknown>>[] {
     ];
 }
 
-test('quotes submit restored images and clear the complete draft only on success or discard', () => {
+test('quotes submit restored images and clear the complete draft only on success or discard', async () => {
     draft.body = 'ghp_' + 'Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4zABCD';
     const commit = {
         id: 'quoted',
@@ -126,7 +128,7 @@ test('quotes submit restored images and clear the complete draft only on success
     )!;
     assert.equal(picker.props.count, 1);
     const added = new File(['new'], 'new.png', { type: 'image/png' });
-    (picker.props.onPick as (files: File[]) => void)([added]);
+    await (picker.props.onPick as (files: File[]) => Promise<void>)([added]);
     assert.deepEqual(updateImages.mock.lastCall, [
         [image, added],
         ['A restored screenshot', ''],

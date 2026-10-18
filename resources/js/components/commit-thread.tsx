@@ -1007,11 +1007,17 @@ function ReplyComposer({
         images,
         descriptions,
         isRestored,
+        key: stashKey,
         updateBody,
         updateImages,
         drop,
     } = useStash(user.id, `reply-${parent.id}`);
-    const attachments = useImageAttachments(images, descriptions, updateImages);
+    const attachments = useImageAttachments(
+        images,
+        descriptions,
+        updateImages,
+        stashKey,
+    );
     const linkCard = useLinkCard(body);
     const updateCommitsCount = useCommitsCountUpdate();
     const request = useHttp<
@@ -1059,7 +1065,12 @@ function ReplyComposer({
             onCancel();
         }
 
-        if (event.key === 'Enter' && hasModKey(event) && isReplyable) {
+        if (
+            event.key === 'Enter' &&
+            hasModKey(event) &&
+            isReplyable &&
+            !attachments.isReading()
+        ) {
             event.preventDefault();
             event.currentTarget.form?.requestSubmit();
         }
@@ -1068,7 +1079,11 @@ function ReplyComposer({
     const submit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
-        if (request.processing || !secrets.beforeSubmit()) {
+        if (
+            request.processing ||
+            attachments.isReading() ||
+            !secrets.beforeSubmit()
+        ) {
             return;
         }
 
@@ -1184,7 +1199,8 @@ function ReplyComposer({
                     <ImagePickerButton
                         count={images.length}
                         disabled={processing}
-                        onPick={attachments.attach}
+                        reading={attachments.reading}
+                        onPick={attachments.pick}
                         className="size-8"
                     />
                     <PreviewToggle preview={preview} className="-ml-2 size-8" />
@@ -1219,7 +1235,7 @@ function ReplyComposer({
                 <Button
                     type="submit"
                     size="sm"
-                    disabled={processing || !isReplyable}
+                    disabled={processing || attachments.reading || !isReplyable}
                     className="min-w-19"
                     data-test="submit-reply-button"
                 >

@@ -8,6 +8,7 @@ const image = new File(['restored'], 'draft.png', { type: 'image/png' });
 let state: unknown[] = [];
 let cursor = 0;
 const draft = {
+    key: 'stash:viewer:commit',
     body: 'A restored draft https://example.com',
     images: [] as File[],
     descriptions: [] as string[],
@@ -29,6 +30,7 @@ const http = {
 vi.doMock('react', () => ({
     ...React,
     useEffect: () => {},
+    useLayoutEffect: (effect: () => void | (() => void)) => effect(),
     useMemo: (factory: () => unknown) => factory(),
     useId: () => `preview-${cursor++}`,
     useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) =>

@@ -1,7 +1,10 @@
 export class PickedImageError extends Error {}
 
-const maxImageBytes = 10 * 1024 * 1024;
-const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+export const maxImages = 3;
+export const maxImageBytes = 10 * 1024 * 1024;
+export const acceptedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+export const invalidImageMessage =
+    'Only JPEG, PNG, or WebP images up to 10 MB.';
 
 /**
  * Copy provider-backed files before reading metadata or creating preview URLs.
@@ -12,10 +15,8 @@ export async function readPickedImages(files: File[]): Promise<File[]> {
     const images: File[] = [];
 
     for (const file of files) {
-        if (!acceptedTypes.includes(file.type)) {
-            throw new PickedImageError(
-                'Only JPEG, PNG, or WebP images up to 10 MB.',
-            );
+        if (!acceptedImageTypes.includes(file.type)) {
+            throw new PickedImageError(invalidImageMessage);
         }
 
         // Bound the copy without inspecting the provider's size/lastModified.
@@ -29,9 +30,7 @@ export async function readPickedImages(files: File[]): Promise<File[]> {
                 if (done) break;
                 bytes += value.byteLength;
                 if (bytes > maxImageBytes) {
-                    throw new PickedImageError(
-                        'Only JPEG, PNG, or WebP images up to 10 MB.',
-                    );
+                    throw new PickedImageError(invalidImageMessage);
                 }
                 chunks.push(new Uint8Array(value));
             }
