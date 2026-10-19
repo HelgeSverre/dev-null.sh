@@ -631,3 +631,49 @@ test('turning scheduling off clears the chosen time and commits now', () => {
     (find('aria-controls', 'body-schedule')!.props.onClick as () => void)();
     assert.equal(find('id', 'body-scheduled-at')!.props.value, '');
 });
+
+test('picker clears its selection before a pending read finishes so the same file can be retried', async () => {
+    const reads: Array<() => void> = [];
+    const selections: File[][] = [];
+    const picker = ImagePickerButton({
+        count: 0,
+        onPick: (files) => {
+            selections.push(files);
+            return new Promise<void>((resolve) => reads.push(resolve));
+        },
+    });
+    const inputElement = elements(picker).find(
+        (element) => element.type === 'input',
+    )!;
+    const onChange = inputElement.props.onChange as (event: {
+        currentTarget: { value: string; files: File[] };
+    }) => Promise<void>;
+    let selected = [image];
+    let value = 'draft.png';
+    const input = {
+        get files() {
+            return selected;
+        },
+        get value() {
+            return value;
+        },
+        set value(next: string) {
+            value = next;
+            if (next === '') selected = [];
+        },
+    };
+
+    const first = onChange({ currentTarget: input });
+    assert.equal(input.value, '');
+    assert.deepEqual(selections, [[image]]);
+
+    // Discarding a draft releases the picker before the first provider settles.
+    selected = [image];
+    value = 'draft.png';
+    const retry = onChange({ currentTarget: input });
+    assert.equal(input.value, '');
+    assert.deepEqual(selections, [[image], [image]]);
+
+    reads.forEach((resolve) => resolve());
+    await Promise.all([first, retry]);
+});

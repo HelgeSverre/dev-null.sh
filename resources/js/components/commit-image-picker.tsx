@@ -108,13 +108,11 @@ export function ImagePickerButton({
                 onChange={async (event) => {
                     const input = event.currentTarget;
                     const files = Array.from(input.files ?? []);
+                    // Allow the same selection again even if this read is discarded.
+                    input.value = '';
                     if (files.length === 0) return;
 
-                    try {
-                        await onPick(files);
-                    } finally {
-                        input.value = '';
-                    }
+                    await onPick(files);
                 }}
                 data-test="commit-image-input"
             />
