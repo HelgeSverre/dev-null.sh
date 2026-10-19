@@ -26,6 +26,7 @@ import { CommitPastelButton } from '@/components/commit-pastel-button';
 import { CommitSecondaryActions } from '@/components/commit-secondary-actions';
 import { CommitStarButton } from '@/components/commit-star-button';
 import { CommitStatusBadge } from '@/components/commit-status-badge';
+import { CommitTimes } from '@/components/commit-times';
 import { useCommitTranslation } from '@/components/commit-translation';
 import {
     ComposerPreviewBody,
@@ -1047,6 +1048,7 @@ function CommitReply({
                                         className="px-2 py-0.5"
                                     />
                                     {translation.button}
+                                    <CommitTimes commit={reply} />
                                 </>
                             }
                         />
