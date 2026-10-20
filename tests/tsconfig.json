@@ -9,6 +9,7 @@
         "Unit/CommitPhoto.test.tsx",
         "Unit/DraftStash.test.tsx",
         "Unit/ComposerDraft.test.tsx",
+        "Unit/AsciinemaStream.test.tsx",
         "Unit/SearchDialogComposition.test.tsx",
         "Unit/DraftImageReads.test.tsx",
         "Unit/ImageAttachments.test.tsx",
