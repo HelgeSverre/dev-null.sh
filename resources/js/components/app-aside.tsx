@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import { Search } from 'lucide-react';
 import AboutController from '@/actions/App/Http/Controllers/AboutController';
+import AppController from '@/actions/App/Http/Controllers/AppController';
 import ChangelogController from '@/actions/App/Http/Controllers/ChangelogController';
 import PrivacyController from '@/actions/App/Http/Controllers/PrivacyController';
 import TermsController from '@/actions/App/Http/Controllers/TermsController';
@@ -172,14 +173,20 @@ export function AppAside({
             <LiveFollowing />
             <WhoToFollow />
 
-            <div className="-mt-4 flex gap-4 border-t pt-4 text-sm text-muted-foreground">
+            <div className="-mt-4 flex flex-wrap gap-x-2.5 gap-y-1 border-t pt-4 text-sm text-muted-foreground">
                 <Link
                     href={AboutController.show()}
                     className="transition-colors hover:text-foreground"
                 >
                     About
                 </Link>
-                <nav aria-label="Legal" className="flex gap-4">
+                <Link
+                    href={AppController.index()}
+                    className="transition-colors hover:text-foreground"
+                >
+                    Apps
+                </Link>
+                <nav aria-label="Legal" className="flex gap-2.5">
                     <Link
                         href={TermsController.show()}
                         className="transition-colors hover:text-foreground"
