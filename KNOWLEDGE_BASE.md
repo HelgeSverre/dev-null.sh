@@ -471,11 +471,11 @@ Livestream history: terminal posting was reported working on [day one at 6:32:47
 
 ### GitHub Actions integration
 
-Use `dev-null-sh/dev-null.sh/.github/actions/commit@production` to publish updates from a GitHub workflow, for example when a release is published. Settings → Terminal includes a workflow example. The action accepts a commit body, an SSH private key supplied through a GitHub Actions secret, an optional `reply-to` reference, optional image paths (up to three), and an optional `url` for another /dev/null instance.
+Use `dev-null-sh/dev-null.sh/.github/actions/commit@production` to publish updates from a GitHub workflow, for example when a release is published. The action accepts a commit body, an SSH private key supplied through a GitHub Actions secret, an optional `reply-to` reference, optional image paths (up to three), and an optional `url` for another /dev/null instance.
 
 Generate a dedicated CI key, add its public half to GitHub as a signing or authentication key, and store the private half only in the repository's encrypted secrets. The action supports Ed25519 or RSA keys without a passphrase. It reports the created commit's link and whether it is pending review as a workflow annotation; it has no step outputs, and a refused submission fails the job. The usual moderation and submission limits still apply.
 
-Sources: [workflow instructions](resources/js/pages/terminal/show.tsx), [GitHub action](.github/actions/commit/action.yml).
+Sources: [GitHub action](.github/actions/commit/action.yml).
 
 ### Public read API and Atom feeds
 
