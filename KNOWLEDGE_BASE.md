@@ -451,11 +451,12 @@ Press **?** to open the shortcut reference. Navigation shortcuts work outside te
 | `Enter` | Open the focused commit. |
 | `y` | Copy the focused commit's link. |
 | `r` / `q` / `o` | Reply, quote, or show/hide replies. |
+| `s` | Star or unstar the focused commit. |
 | `c` | Write a commit. |
 | `⌘/Ctrl+K` or `/` | Search developers and commits. |
 | `⌘/Ctrl+Enter` | Submit from the composer. |
 | `⌘/Ctrl+Shift+P` | Toggle composer preview. |
-| `g` then `l` / `e` / `p` / `s` | Go to your log / Trending / profile / settings. |
+| `g` then `l` / `e` / `p` / `s` / `n` / `m` / `*` | Go to your log / Trending / profile / settings / Notifications / Remotes / Starred. `g m` works only while Remotes is on. |
 
 Source: [shortcut reference](resources/js/components/keyboard-shortcuts-dialog.tsx).
 
