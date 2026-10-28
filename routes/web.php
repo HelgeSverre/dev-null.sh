@@ -86,6 +86,7 @@ use App\Http\Controllers\OrgReadController;
 use App\Http\Controllers\OrgTypingController;
 use App\Http\Controllers\PrivacyController;
 use App\Http\Controllers\ProductMetricsController;
+use App\Http\Controllers\ProfileOpenGraphImageController;
 use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\RelatedCommitController;
 use App\Http\Controllers\RemoteCandidateController;
@@ -118,7 +119,6 @@ use App\Http\Controllers\UserLaneController;
 use App\Http\Controllers\UserLiveController;
 use App\Http\Controllers\UserMuteController;
 use App\Http\Controllers\UserMutualsController;
-use App\Http\Controllers\UserOpenGraphImageController;
 use App\Http\Controllers\UserPasteisModeController;
 use App\Http\Controllers\UserPreviewController;
 use App\Http\Controllers\UserProfileController;
@@ -250,7 +250,7 @@ Route::get('mentions/{user}/preview', [UserPreviewController::class, 'show'])
 Route::get('@{user:handle}/preview', [UserPreviewController::class, 'show'])
     ->middleware('throttle:people')
     ->name('user-preview.show');
-Route::get('@{user:handle}/og.png', [UserOpenGraphImageController::class, 'show'])
+Route::get('@{profile:handle}/og.png', [ProfileOpenGraphImageController::class, 'show'])
     ->name('user-open-graph-image.show');
 Route::get('@{user:handle}/feed.atom', [UserFeedController::class, 'show'])
     ->middleware('cache.headers:public;max_age=300;etag')

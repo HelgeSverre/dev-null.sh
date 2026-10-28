@@ -29,6 +29,35 @@ it('shows an organization at the handle no user has, to guests too', function ()
             ->missing('organization.github_synced_at'));
 });
 
+it('shows guests the link preview of the organization', function (): void {
+    $laravel = Profile::factory()->organization()->create([
+        'handle' => 'laravel',
+        'name' => 'Laravel',
+        'bio' => 'The PHP framework for web artisans.',
+    ]);
+
+    $this->get('/@laravel')
+        ->assertOk()
+        ->assertSee('<meta property="og:type" content="profile">', false)
+        ->assertSee('<meta property="og:title" content="Laravel (@laravel) on /dev/null">', false)
+        ->assertSee('<meta property="og:description" content="The PHP framework for web artisans.">', false)
+        ->assertSee('<meta property="og:url" content="'.route('user.show', 'laravel').'">', false)
+        ->assertSee('<meta property="og:image" content="'.route('user-open-graph-image.show', ['profile' => 'laravel', 'v' => $laravel->openGraphImageVersion()]).'">', false)
+        ->assertSee('<meta property="profile:username" content="laravel">', false)
+        ->assertSee('application/ld+json', false);
+});
+
+it('keeps the default link preview of an organization for signed-in users', function (): void {
+    Profile::factory()->organization()->create(['handle' => 'laravel']);
+
+    $this->actingAs(User::factory()->create())
+        ->get('/@laravel')
+        ->assertOk()
+        ->assertSee('<meta property="og:image" content="'.url('/og.png').'">', false)
+        ->assertDontSee('og:url', false)
+        ->assertDontSee('application/ld+json', false);
+});
+
 it('does not find handles that are neither a user nor an organization', function (): void {
     $this->get('/@nobody')->assertNotFound();
 });

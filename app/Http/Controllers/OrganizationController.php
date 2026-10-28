@@ -8,6 +8,7 @@ use App\Http\Requests\ShowOrganizationRequest;
 use App\Models\Profile;
 use App\Models\User;
 use App\Queries\OrganizationMentionsQuery;
+use App\Services\PageMetadata;
 use Illuminate\Container\Attributes\CurrentUser;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,9 +17,9 @@ final readonly class OrganizationController
 {
     /**
      * Organization pages are public, at the "@handle" of users, and show the organization's GitHub profile and the
-     * commits that mention it.
+     * commits that mention it, with the organization's link preview.
      */
-    public function show(ShowOrganizationRequest $request, #[CurrentUser] ?User $currentUser, OrganizationMentionsQuery $mentions): Response
+    public function show(ShowOrganizationRequest $request, #[CurrentUser] ?User $currentUser, OrganizationMentionsQuery $mentions, PageMetadata $metadata): Response
     {
         $organization = $request->organization();
         assert($organization instanceof Profile);
@@ -30,6 +31,6 @@ final readonly class OrganizationController
             'commits' => Inertia::scroll(fn () => $mentions->builder($organization, $currentUser)
                 ->cursorPaginate(20)
                 ->appends(['tab' => $request->tab()])),
-        ]);
+        ])->withViewData(['preview' => $currentUser instanceof User || $request->inertia() ? null : $metadata->organization($organization)]);
     }
 }

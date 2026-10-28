@@ -80,6 +80,14 @@ final class Profile extends Model
     }
 
     /**
+     * Changes whenever anything drawn on the organization's link preview image may have changed.
+     */
+    public function openGraphImageVersion(): string
+    {
+        return hash('xxh3', (string) json_encode([$this->name, $this->handle, $this->avatar_url, $this->bio]));
+    }
+
+    /**
      * @return HasOne<User, $this>
      */
     public function user(): HasOne
