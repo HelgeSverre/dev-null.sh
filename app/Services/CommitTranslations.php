@@ -8,6 +8,7 @@ use App\Enums\CommitStatus;
 use App\Enums\Feature;
 use App\Exceptions\CommitProcessingFailed;
 use App\Jobs\DetectCommitLanguage;
+use App\Jobs\TranslateLinkPreview;
 use App\Models\Commit;
 use App\Models\LinkPreview;
 use Illuminate\Database\Eloquent\Collection;
@@ -50,13 +51,21 @@ final readonly class CommitTranslations
     }
 
     /**
-     * The commit's preview when it has been loaded and shows a title, as only then is there text to translate.
+     * The commit's preview when it has been loaded and is translatable.
      */
     public function translatableLinkPreview(Commit $commit): ?LinkPreview
     {
         $linkPreview = $commit->relationLoaded('linkPreview') ? $commit->linkPreview : null;
 
-        return $linkPreview instanceof LinkPreview && filled($linkPreview->title) ? $linkPreview : null;
+        return $linkPreview instanceof LinkPreview && $this->isTranslatable($linkPreview) ? $linkPreview : null;
+    }
+
+    /**
+     * Only a preview whose page has been read and that shows a title has text to translate.
+     */
+    public function isTranslatable(LinkPreview $linkPreview): bool
+    {
+        return $linkPreview->fetched_at !== null && filled($linkPreview->title);
     }
 
     /** @return list<string> */
@@ -140,12 +149,12 @@ final readonly class CommitTranslations
             'source_name' => $source === null ? null : Locale::getDisplayLanguage($source, 'en'),
             'available' => $source !== $language && $source !== 'und',
             'translated' => $body === null ? null : resolve(CommitBodies::class)->segments($body),
-            'link_preview' => $this->linkPreviewTranslation($commit, $language),
+            'link_preview' => $this->linkPreviewTranslation($commit, $language, isPostTranslated: $body !== null),
         ];
     }
 
     /** @return LinkPreviewTranslation|null */
-    private function linkPreviewTranslation(Commit $commit, string $language): ?array
+    private function linkPreviewTranslation(Commit $commit, string $language, bool $isPostTranslated): ?array
     {
         $linkPreview = $this->translatableLinkPreview($commit);
 
@@ -155,7 +164,18 @@ final readonly class CommitTranslations
 
         /** @var CachedLinkPreviewTranslations|null $cached */
         $cached = Cache::memo()->get($this->linkPreviewKey($linkPreview));
+        $translation = $cached['translations'][$language] ?? null;
 
-        return $cached['translations'][$language] ?? null;
+        // A post shown translated next to an untranslated preview catches up in the background, the same way an
+        // unfamiliar post has its language detected.
+        if ($translation === null && $isPostTranslated) {
+            try {
+                dispatch(new TranslateLinkPreview($linkPreview->id, $language))->afterCommit();
+            } catch (Throwable $exception) {
+                report(new CommitProcessingFailed('Link preview translation dispatch', $commit->id, $exception));
+            }
+        }
+
+        return $translation;
     }
 }

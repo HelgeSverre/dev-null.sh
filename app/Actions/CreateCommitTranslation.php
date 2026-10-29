@@ -48,6 +48,45 @@ final readonly class CreateCommitTranslation
         }
     }
 
+    /**
+     * Translates the preview's title and description, shared by every post linking the same page. Throws when the
+     * response can't be used, so a queued retry can try again.
+     */
+    public function translateLinkPreview(LinkPreview $linkPreview, string $language): void
+    {
+        $key = $this->translations->linkPreviewKey($linkPreview);
+
+        Cache::lock($key.':lock', 90)->block(35, function () use ($linkPreview, $language, $key): void {
+            $cached = $this->translations->cachedLinkPreview($linkPreview);
+
+            if (isset($cached['translations'][$language])) {
+                return;
+            }
+
+            $response = new LinkPreviewTranslator($language)->prompt((string) json_encode([
+                'title' => $linkPreview->title,
+                'description' => $linkPreview->description ?? '',
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+            $title = $response['title'] ?? null;
+            $description = $response['description'] ?? null;
+
+            if (! is_string($title) || ! is_string($description) || blank($title) || ($linkPreview->description !== null && blank($description)) || mb_strlen($title) > 600 || mb_strlen($description) > 1000) {
+                throw new RuntimeException('Invalid link preview translation response.');
+            }
+
+            $translations = $cached['translations'] ?? [];
+            $translations[$language] = [
+                'title' => $title,
+                'description' => $linkPreview->description === null ? null : $description,
+            ];
+
+            $expiresAt = $cached['expires_at'] ?? now()->getTimestamp() + CommitTranslations::TTL_SECONDS;
+
+            Cache::memo()->put($key, ['translations' => $translations, 'expires_at' => $expiresAt], max(1, $expiresAt - now()->getTimestamp()));
+        });
+    }
+
     private function translateBody(Commit $commit, ?string $language): void
     {
         $key = $this->translations->key($commit);
@@ -100,41 +139,6 @@ final readonly class CreateCommitTranslation
 
                 Cache::memo()->put($key, ['source_language' => $source, 'translations' => $translations, 'expires_at' => $expiresAt], max(1, $expiresAt - now()->getTimestamp()));
             });
-        });
-    }
-
-    private function translateLinkPreview(LinkPreview $linkPreview, string $language): void
-    {
-        $key = $this->translations->linkPreviewKey($linkPreview);
-
-        Cache::lock($key.':lock', 90)->block(35, function () use ($linkPreview, $language, $key): void {
-            $cached = $this->translations->cachedLinkPreview($linkPreview);
-
-            if (isset($cached['translations'][$language])) {
-                return;
-            }
-
-            $response = new LinkPreviewTranslator($language)->prompt((string) json_encode([
-                'title' => $linkPreview->title,
-                'description' => $linkPreview->description ?? '',
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-            $title = $response['title'] ?? null;
-            $description = $response['description'] ?? null;
-
-            if (! is_string($title) || ! is_string($description) || blank($title) || mb_strlen($title) > 600 || mb_strlen($description) > 1000) {
-                throw new RuntimeException('Invalid link preview translation response.');
-            }
-
-            $translations = $cached['translations'] ?? [];
-            $translations[$language] = [
-                'title' => $title,
-                'description' => $linkPreview->description === null || blank($description) ? null : $description,
-            ];
-
-            $expiresAt = $cached['expires_at'] ?? now()->getTimestamp() + CommitTranslations::TTL_SECONDS;
-
-            Cache::memo()->put($key, ['translations' => $translations, 'expires_at' => $expiresAt], max(1, $expiresAt - now()->getTimestamp()));
         });
     }
 }
