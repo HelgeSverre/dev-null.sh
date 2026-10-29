@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Ai\Agents\CommitTranslator;
+use App\Ai\Agents\LinkPreviewTranslator;
 use App\Enums\CommitStatus;
 use App\Exceptions\CommitProcessingFailed;
 use App\Models\Commit;
+use App\Models\LinkPreview;
 use App\Services\CommitTranslations;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +23,32 @@ final readonly class CreateCommitTranslation
         //
     }
 
+    /**
+     * Detects the post's language, or translates it into the given language along with the title and description of
+     * its link preview. The preview is extra: when it can't be translated, the post is still shown translated.
+     */
     public function handle(Commit $commit, ?string $language = null): void
+    {
+        $this->translateBody($commit, $language);
+
+        if ($language === null || in_array($this->translations->cached($commit)['source_language'] ?? null, [$language, 'und', null], true)) {
+            return;
+        }
+
+        $linkPreview = $this->translations->translatableLinkPreview($commit->loadMissing('linkPreview'));
+
+        if (! $linkPreview instanceof LinkPreview) {
+            return;
+        }
+
+        try {
+            $this->translateLinkPreview($linkPreview, $language);
+        } catch (Throwable $throwable) {
+            report(new CommitProcessingFailed('Link preview translation', $commit->id, $throwable));
+        }
+    }
+
+    private function translateBody(Commit $commit, ?string $language): void
     {
         $key = $this->translations->key($commit);
 
@@ -73,6 +100,41 @@ final readonly class CreateCommitTranslation
 
                 Cache::memo()->put($key, ['source_language' => $source, 'translations' => $translations, 'expires_at' => $expiresAt], max(1, $expiresAt - now()->getTimestamp()));
             });
+        });
+    }
+
+    private function translateLinkPreview(LinkPreview $linkPreview, string $language): void
+    {
+        $key = $this->translations->linkPreviewKey($linkPreview);
+
+        Cache::lock($key.':lock', 90)->block(35, function () use ($linkPreview, $language, $key): void {
+            $cached = $this->translations->cachedLinkPreview($linkPreview);
+
+            if (isset($cached['translations'][$language])) {
+                return;
+            }
+
+            $response = new LinkPreviewTranslator($language)->prompt((string) json_encode([
+                'title' => $linkPreview->title,
+                'description' => $linkPreview->description ?? '',
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+            $title = $response['title'] ?? null;
+            $description = $response['description'] ?? null;
+
+            if (! is_string($title) || ! is_string($description) || blank($title) || mb_strlen($title) > 600 || mb_strlen($description) > 1000) {
+                throw new RuntimeException('Invalid link preview translation response.');
+            }
+
+            $translations = $cached['translations'] ?? [];
+            $translations[$language] = [
+                'title' => $title,
+                'description' => $linkPreview->description === null || blank($description) ? null : $description,
+            ];
+
+            $expiresAt = $cached['expires_at'] ?? now()->getTimestamp() + CommitTranslations::TTL_SECONDS;
+
+            Cache::memo()->put($key, ['translations' => $translations, 'expires_at' => $expiresAt], max(1, $expiresAt - now()->getTimestamp()));
         });
     }
 }
